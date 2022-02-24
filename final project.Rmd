@@ -1,0 +1,196 @@
+---
+title: "Final project"
+author: "Mike VerHulst"
+date: "12/10/2021"
+output: html_document
+---
+## Introduction
+
+For my final project I decided to use data from the National Hockey League. I have been a hockey fan my entire life and grew up during the golden age of the Detroit Red Wings. The data set I chose covers the 2007-2008 season and was sourced from hockey-reference.com. During the 2007-2008 season the Red Wings won their 4th championship in 11 years and marks the last time they won the Stanley Cup. This season began the long decline that the Red Wings are (hopefully) just now working their way out of. That being said, let's get started!
+
+<center>
+
+![2007-2008 Red Wings after winning the Stanley Cup](test.jpg)
+
+</center>
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(moderndive)
+library(skimr)
+library(knitr)
+library(infer)
+```
+
+```{r, include=FALSE}
+#Check working directory
+getwd()
+```
+
+```{r data, echo=FALSE}
+# Reading in the data
+season <- read.csv("07-08 season stats cleaned.csv")
+#head(season)
+```
+
+## Visualizing the dataset
+Let's take a look at the points distribution across the league for the year. Teams accumulate points by winning a game (2 points) or losing a game in overtime or a shootout (1 point). If a team loses a game in regulation time (no overtime or shootout), they gain no points. As we see below, the distribution of points across the league is fairly regular with a slight skew to the left. To calculate the number of bins for the distribution below I used the rule of thumb of setting the number of bins to the square root of the number of observations (5.5 rounded to 6).
+
+```{r  fig.align='center'}
+# Distribution of points in the 07-08 NHL season
+ggplot(season, aes(x = points))+
+  geom_histogram(color = "white", bins = 6)+
+  theme_classic()+
+  labs(x = "points")
+```
+
+Next, let's plot the number of goals each team scored this season. In this plot the color of the fill equates to how many shots that team took with darker bars being more shots. To look at it another way, there is also a plot ordered by shot percentage (the percentage of shots that result in a goal) with the fill indicating how many goals that team scored. In the second chart we can see that, in general, teams with a higher shot percentage also had more goals. However, there are a few examples of teams that were leading scorers but not as efficient with their shots, such as the Red Wings and the Carolina Hurricanes.
+
+```{r fig.align='center'}
+# Shot totals by team
+ggplot(season, aes(fill = shots, x = reorder(team, +goals_for), y = goals_for))+
+  geom_col(width = .75, position = position_dodge(.7))+
+  theme_classic()+
+  coord_flip()+
+  labs(y = "goals for", x = "teams")+
+  scale_fill_continuous(trans="reverse")
+# Shot percentage by team
+ggplot(season, aes(fill = goals_for, x = reorder(team, +shot_pct), y = shot_pct))+
+  geom_col(width = .75, position = position_dodge(.7))+
+  theme_classic()+
+  coord_flip()+
+  labs(y = "shot percentage", x = "teams")+
+  scale_fill_continuous(trans="reverse")
+```
+
+Finally, let's plot the number of losses for each team. For a bit of extra fun, the fill color will represent the amount of games where teams lost in overtime or a shootout. Due to how how points are scored in the NHL, they still received 1 point towards their rankings for these losses but it illustrates how many times a team was simply one goal away from gaining an extra point. For example, the Buffalo Sabres had 21 losses like this and narrowly missed the playoffs because of it.
+```{r fig.align='center'}
+ggplot(season, aes(fill = (ot_so_losses), x = reorder(team, -losses), y = losses))+
+  geom_col(width = .75, position = position_dodge(.7))+
+  theme_classic()+
+  coord_flip()+
+  labs(y = "losses", x = "teams")+
+  scale_fill_continuous(trans="reverse")
+```
+
+
+## Descriptive Statistics
+In this particular season, the Detroit Red Wings went on to win the 11th Stanley Cup in team history. Having been a regular Stanley Cup contender, there were several veteran players that wanted to come to Detroit to have a chance at winning the championship before retiring. As a result, the Red Wings had quite a few older players on their roster. But just how old were they compared to the rest of the league? Luckily, we have the data to find out.
+
+We'll begin by extracting the average age value from the Red Wings line of the data and then calculating the mean average age for the remaining teams.
+
+```{r fig.align='center'}
+# Pulling the Red Wings data into an easily accessible variable
+red_wings <- season %>% 
+  filter(rank == 1)
+
+# Average age of the Red Wings roster
+red_wings_age <- red_wings$avg_age
+red_wings_age
+
+# Summary statistics of average age for all teams in the NHL
+league_age <- mean(season$avg_age)
+league_age
+```
+
+So the average age of a Red Wings player is 32.1 years old and the overall average age of the other teams in the league is 28.18. Does that make the Red Wings an outlier? Let's calculate this by using the Interquartile Rule that states an outlier is anything beyond 1.5 * IQR + Q3. We can find these values by using the "summary" and "IQR" functions.
+```{r fig.align='center'}
+# Summary statistics of average age for all teams in the NHL
+league_age_sum <- summary(league_age)
+league_age_sum
+
+# Calculating the interquartile range of the age data
+league_iqr <- IQR(season$avg_age)
+league_iqr
+```
+
+Above we can see that the IQR is equal to 1.05 and Q3 is equal to 28.5. Therefore, anything above 1.5*1.05 + 28.5 is considered an outlier. Since the Red Wings surpass this figure, they are officially an outlier.
+```{r fig.align='center'}
+# Calculating the threshold for outliers using the Interquartile Rule
+1.5*1.05 + 28.5
+
+#Red Wings average age
+red_wings_age
+```
+This isn't too surprising once you take a look at the Red Wings roster for that year. There are two players in particular that stand out: Chris Chelios (46 years old) and Dominick Hasek (43 years old). However, how would removing these two players affect the average age of the Red Wings roster? To find out, we'll have to load in the Red Wings roster from that season. Once that is loaded in, we'll remove those players and recalculate the average age of the team.
+
+*Note: The original average age was calculated by hockey_reference.com and was weighted by the amount of ice time each player had. Since I couldn't access the same method they used, I used the Red Wings playoff roster statistics for that same season. The average age of the playoff roster without the weighting is actually lower than the original whole season figure (31.7 for playoff roster vs. 32.1 for the season).
+
+```{r fig.align='center'}
+# Reading in the playoff roster data
+roster <- read.csv("playoff_roster.csv")
+
+# Dropping Chelios and Hasek from the roster
+roster_new <- subset(roster, Age!=43 & Age!=46)
+
+# Average age for Red Wings BEFORE dropping Chelios and Hasek
+mean(roster$Age)
+# Average age for Red Wings AFTER dropping Chelios and Hasek
+mean(roster_new$Age)
+
+```
+
+Even after dropping the 2 oldest players on the 23 person roster, the Red Wings average age still exceeds 30.075 outlier threshold. Winning the Stanley Cup is an impressive achievement for a bunch of geezers! For comparison, the average age for the Pittsburgh Penguins (their opponent in the Stanley Cup final) was only 26.9 years old.
+
+## Data Wrangling
+Let's get back to the scoring data to see if we can find any correlations. One might make the assumption that teams that have a high number of shots on goal might end up winning more games. Similarly, if a team has a high shot percentage, they might be more likely to win. To explore this, let's pare down the data set to make it easier to work with.
+
+We'll keep the team names, wins, losses, points, points percentage, goals for, goals for per game, shots, and shot percentage. We'll call this new dataframe "season_small."
+```{r}
+season_small <- season %>% select(team, wins, losses, points, points_pct, goals_for, goals_for_per_game, shots, shot_pct)
+head(season_small)
+```
+
+Now that we've got the data in a more manageable package, let's use the "get_correlation" function to test our hunch. First, let's see if the number of shots a team takes has any correlation to winning. 
+
+```{r}
+# Calculating correlation of shots on the number of wins
+cor_shots <- season_small %>% get_correlation(formula = wins ~ shots)
+cor_shots
+```
+
+After running the calculation, it appears the correlation coefficient is only 0.272 which isn't very impressive. Next, let's try goals_for_per_game to see if it's any better.
+
+```{r}
+cor_goals_per_game <- season_small %>% get_correlation(formula = wins ~ goals_for_per_game)
+cor_goals_per_game
+```
+
+Coming in at 0.40 is closer to the result we were looking for though still not strong. Now that we're on the right track, let's visualize it and fit a linear model.
+
+## Fitting a Linear Model
+Now that we've wrangled our data set, let's get to work visualizing it. First, we'll use a scatterplot to chart each teams results with the x-axis being goals_for_per_game and the y-axis being their win total. As we could have guessed from the calculations we just ran, the data points don't have a very strong grouping.
+
+```{r fig.align='center'}
+ggplot(season_small, aes(x = goals_for_per_game, y = wins, color = shots)) +
+  geom_point()+
+  theme_classic()
+```
+
+```{r}
+linear <- lm(wins ~ goals_for_per_game, season_small)
+multiple <- lm(wins ~ goals_for_per_game * shots, season_small)
+get_regression_table(linear)
+get_regression_table(multiple)
+```
+
+
+Now we'll fit a linear model to this plot using the "geom_smooth" method. 
+
+```{r fig.align='center'}
+ggplot(season_small, aes(x = goals_for_per_game, y = wins, color = shots)) +
+  geom_point()+
+  theme_classic()+
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+As we guessed, the line does not fit the data points very well. Although it's not a very strong correlation, it appears that scoring more goals per game does lead to more wins. This isn't exactly a thrilling result but it's also interesting to see that the correlation isn't stronger.
+
+Like many sports, there are a plethora of other factors that influence the result of any given game and that's what makes them exciting to watch. It has been a long time since the Red Wings have been as successful as they were in the 2007-2008 season but hopefully that will change soon.
+
+<center>
+
+![](lgrw.png)
+
+</center>
