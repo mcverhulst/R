@@ -1,2 +1,2 @@
-# SI544
+# R
 Statistics and R
